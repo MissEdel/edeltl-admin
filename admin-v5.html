@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>EdelTL Admin v5</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --line:#d9d9e0; --acc:#5b4bdb; --err:#c62828; --ok:#2e7d32; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141418; --fg:#ececf1; --mut:#9a9aa6; --line:#2c2c35; --acc:#8b7dff; --err:#ef7b7b; --ok:#6fcf7a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,sans-serif; max-width:760px; margin-inline:auto; }
+  h1 { font-size:20px; margin:0 0 12px; }
+  h2 { font-size:16px; margin:0 0 10px; }
+  section { border:1px solid var(--line); border-radius:10px; padding:14px; margin:0 0 14px; }
+  label { display:block; font-size:13px; color:var(--mut); margin:8px 0 3px; }
+  input, textarea, button { font:inherit; color:inherit; background:transparent; border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; }
+  textarea { min-height:220px; resize:vertical; }
+  input[type=checkbox] { width:auto; }
+  .row { display:flex; gap:10px; } .row > * { flex:1; }
+  button { cursor:pointer; background:var(--acc); color:#fff; border-color:var(--acc); width:auto; margin-top:10px; }
+  button.ghost { background:transparent; color:var(--fg); border-color:var(--line); }
+  #msg { position:sticky; top:0; padding:8px 12px; border-radius:8px; margin-bottom:12px; display:none; }
+  #msg.err { display:block; color:var(--err); border:1px solid var(--err); background:var(--bg); }
+  #msg.ok  { display:block; color:var(--ok);  border:1px solid var(--ok);  background:var(--bg); }
+  .user { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--line); }
+  .user button { margin:0; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<h1>EdelTL Admin <small style="font-size:12px;color:var(--mut)">v5 · tanpa kode unlock</small></h1>
+<div id="msg" role="status"></div>
+
+<section id="loginBox">
+  <h2>Masuk</h2>
+  <label for="em">Email</label><input id="em" type="email" autocomplete="username">
+  <label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password">
+  <button id="loginBtn">Masuk</button>
+</section>
+
+<div id="app" hidden>
+  <p><span id="who"></span> <button class="ghost" id="logoutBtn">Keluar</button></p>
+
+  <section>
+    <h2>Tambah / ubah bab</h2>
+    <div class="row">
+      <div><label for="slug">Slug novel</label><input id="slug" placeholder="contoh: my-novel"></div>
+      <div><label for="num">Nomor bab</label><input id="num" type="number" min="1" step="1"></div>
+    </div>
+    <label for="title">Judul bab</label><input id="title">
+    <label for="body">Isi (teks biasa: baris kosong = paragraf baru; HTML juga boleh)</label>
+    <textarea id="body"></textarea>
+    <button id="saveCh">Simpan bab</button>
+    <button class="ghost" id="loadCh">Muat bab yang ada</button>
+  </section>
+
+  <section>
+    <h2>Migrasi bab dari Blogger</h2>
+    <p style="font-size:13px;color:var(--mut);margin:0 0 6px">Menyalin novel &amp; bab dari feed Blogger ke Firestore. Aman diulang (bab ditimpa dengan ID yang sama). Mulai dengan "cek saja" dulu.</p>
+    <label for="mSite">Alamat blog</label><input id="mSite" value="https://edeltl.blogspot.com">
+    <label><input type="checkbox" id="mDry" checked> Cek saja (tidak menulis apa-apa)</label>
+    <button id="mRun">Mulai</button>
+    <pre id="mLog" style="white-space:pre-wrap;font-size:12px;margin:10px 0 0;max-height:260px;overflow:auto"></pre>
+  </section>
+
+  <section>
+    <h2>Pembaca menunggu persetujuan</h2>
+    <div id="pending">—</div>
+    <button class="ghost" id="refreshPending">Muat ulang</button>
+  </section>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAkMgfUDecjQ6qmru3VxlMJQtjQcsqqYls",
+  authDomain: "edeltl.firebaseapp.com",
+  projectId: "edeltl",
+  storageBucket: "edeltl.firebasestorage.app",
+  messagingSenderId: "929008170479",
+  appId: "1:929008170479:web:174d32796a207e47aa721a"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const $ = (id) => document.getElementById(id);
+
+function say(text, kind) {
+  const m = $('msg');
+  m.textContent = text;
+  m.className = kind || 'ok';
+  clearTimeout(say.t);
+  if (kind !== 'err') say.t = setTimeout(() => { m.className = ''; }, 6000); // error tetap tampil
+  window.scrollTo(0, 0);
+}
+const pad = (n) => 'c' + String(n).padStart(5, '0');
+const cleanSlug = (s) => s.trim();
+
+function toHtml(raw) {
+  const t = raw.trim();
+  if (/<\w+[^>]*>/.test(t)) return t;
+  const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return t.split(/\n\s*\n|\n/).map((p) => p.trim()).filter(Boolean).map((p) => '<p>' + esc(p) + '</p>').join('\n');
+}
+
+auth.onAuthStateChanged(async (user) => {
+  $('loginBox').hidden = !!user;
+  $('app').hidden = true;
+  if (!user) return;
+  try {
+    const a = await db.doc('admins/' + user.uid).get();
+    if (!a.exists) { say('Akun ini bukan admin. UID: ' + user.uid, 'err'); await auth.signOut(); return; }
+  } catch (e) { say('Gagal cek admin (' + (e.code || '?') + '): ' + e.message, 'err'); await auth.signOut(); return; }
+  $('who').textContent = user.email;
+  $('app').hidden = false;
+  loadPending();
+});
+
+$('loginBtn').onclick = () => {
+  say('Masuk...', 'ok');
+  auth.signInWithEmailAndPassword($('em').value.trim(), $('pw').value)
+    .catch((e) => say('Gagal masuk: ' + (e.code || '') + ' ' + e.message, 'err'));
+};
+$('logoutBtn').onclick = () => auth.signOut();
+
+$('loadCh').onclick = async () => {
+  const slug = cleanSlug($('slug').value), n = parseInt($('num').value, 10);
+  if (!slug || !n) return say('Isi slug dan nomor bab.', 'err');
+  const d = await db.doc(`novels/${slug}/chapters/${pad(n)}`).get();
+  if (!d.exists) return say('Bab belum ada.', 'err');
+  $('title').value = d.data().title || '';
+  $('body').value = d.data().body || '';
+  say('Bab dimuat.');
+};
+
+$('saveCh').onclick = async () => {
+  const slug = cleanSlug($('slug').value), n = parseInt($('num').value, 10);
+  const title = $('title').value.trim(), body = toHtml($('body').value);
+  if (!slug || !n || !title || !body) return say('Slug, nomor, judul, dan isi wajib diisi.', 'err');
+  try {
+    const novelRef = db.doc('novels/' + slug);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(novelRef);
+      const toc = (snap.exists && snap.data().toc) || [];
+      const id = pad(n);
+      const old = toc.find((x) => x.id === id);
+      const t = (old && old.t) || Date.now();
+      const next = toc.filter((x) => x.id !== id).concat({ id, n, title, t }).sort((a, b) => a.n - b.n);
+      const last = next.reduce((m, x) => Math.max(m, x.t || 0), 0);
+      tx.set(db.doc(`novels/${slug}/chapters/${id}`), { n, title, body, updatedAt: Date.now() });
+      tx.set(novelRef, { toc: next, updatedAt: Date.now() }, { merge: true });
+      tx.set(db.doc('novelMeta/' + slug), { count: next.length, lastUpdated: new Date(last).toISOString() });
+    });
+    say(`Bab ${n} tersimpan.`);
+    $('num').value = n + 1; $('title').value = ''; $('body').value = '';
+  } catch (e) { say(e.message, 'err'); }
+};
+
+async function loadPending() {
+  const box = $('pending');
+  try {
+    const qs = await db.collection('users').where('approved', '==', false).limit(50).get();
+    box.textContent = '';
+    if (qs.empty) { box.textContent = 'Tidak ada.'; return; }
+    qs.forEach((d) => {
+      const row = document.createElement('div'); row.className = 'user';
+      const span = document.createElement('span'); span.textContent = d.data().email || d.id;
+      const btn = document.createElement('button'); btn.textContent = 'Setujui';
+      btn.onclick = async () => {
+        try { await d.ref.update({ approved: true }); row.remove(); say('Disetujui.'); }
+        catch (e) { say(e.message, 'err'); }
+      };
+      row.append(span, btn); box.append(row);
+    });
+  } catch (e) { say(e.message, 'err'); }
+}
+$('refreshPending').onclick = loadPending;
+
+// ---------- Migrasi dari Blogger ----------
+(function () {
+  const log = (t) => { const l = $('mLog'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; };
+  const terms = (e) => (e.category || []).map((c) => c.term);
+  // Urutan bab sama seperti tema: nomor di judul dulu ("Prolog" = paling awal),
+  // tanggal terbit hanya kalau salah satu judul tidak punya angka.
+  const ord = (title) => {
+    if (/prolog/i.test(title)) return -1;
+    const m = title.match(/(\d+(?:\.\d+)?)/);
+    return m ? parseFloat(m[1]) : Infinity;
+  };
+  const byTitleThenDate = (a, b) => {
+    const oa = ord(a.title.$t), ob = ord(b.title.$t);
+    if (isFinite(oa) && isFinite(ob) && oa !== ob) return oa - ob;
+    return new Date(a.published.$t) - new Date(b.published.$t);
+  };
+  const slugOf = (e) => { const t = terms(e).find((x) => x.startsWith('novel:')); return t ? t.slice(6) : null; };
+
+  // JSONP (alt=json-in-script): dimuat lewat <script>, jadi tidak kena batasan CORS.
+  let jsonpN = 0;
+  function jsonp(url) {
+    return new Promise((resolve, reject) => {
+      const cb = '__edeltlJsonp' + (++jsonpN) + '_' + Date.now();
+      const sc = document.createElement('script');
+      const done = () => { delete window[cb]; sc.remove(); clearTimeout(timer); };
+      const timer = setTimeout(() => { done(); reject(new Error('Timeout: ' + url)); }, 30000);
+      window[cb] = (data) => { done(); resolve(data); };
+      sc.onerror = () => { done(); reject(new Error('Gagal memuat feed (diblokir atau tidak ada): ' + url)); };
+      sc.src = url + '&callback=' + cb;
+      document.head.appendChild(sc);
+    });
+  }
+
+  async function feed(site, label, extra) {
+    const out = [];
+    for (let start = 1; ; start += 150) {
+      const url = `${site}/feeds/posts/default/-/${encodeURIComponent(label)}?alt=json-in-script&max-results=150&start-index=${start}${extra || ''}`;
+      const data = await jsonp(url);
+      const entries = (data.feed && data.feed.entry) || [];
+      out.push(...entries);
+      if (entries.length < 150) break;
+    }
+    return out;
+  }
+
+  $('mRun').onclick = async () => {
+    const site = $('mSite').value.trim().replace(/\/+$/, ''), dry = $('mDry').checked;
+    $('mLog').textContent = '';
+    $('mRun').disabled = true;
+    try {
+      const infos = await feed(site, 'novel-info');
+      log('Novel ditemukan: ' + infos.length);
+      for (const info of infos) {
+        const slug = slugOf(info);
+        if (!slug) { log('Lewati (tanpa label novel:): ' + info.title.$t); continue; }
+        const all = await feed(site, 'novel:' + slug, '&orderby=published');
+        const chapters = all.filter((e) => !terms(e).includes('novel-info')).sort(byTitleThenDate);
+        const bodyText = ((info.content && info.content.$t) || '').replace(/<[^>]+>/g, ' ');
+        const locked = false;
+        const toc = chapters.map((e, i) => ({ id: pad(i + 1), n: i + 1, title: e.title.$t, t: new Date(e.published.$t).getTime() }));
+        log(`${slug}: ${chapters.length} bab, locked=${locked}`);
+        if (dry) { toc.slice(0, 3).forEach((x) => log('   ' + x.id + ' ' + x.title)); if (toc.length > 3) log('   ... ' + toc[toc.length - 1].id + ' ' + toc[toc.length - 1].title); continue; }
+
+        const lastT = toc.reduce((m, x) => Math.max(m, x.t || 0), 0);
+        let batch = db.batch(), ops = 0;
+        const flush = async () => { if (ops) { await batch.commit(); batch = db.batch(); ops = 0; } };
+        batch.set(db.doc('novels/' + slug), { locked, toc, updatedAt: Date.now() }, { merge: true }); ops++;
+        batch.set(db.doc('novelMeta/' + slug), { count: toc.length, lastUpdated: lastT ? new Date(lastT).toISOString() : null }); ops++;
+        for (let i = 0; i < chapters.length; i++) {
+          const e = chapters[i];
+          batch.set(db.doc(`novels/${slug}/chapters/${pad(i + 1)}`), {
+            n: i + 1, title: e.title.$t, body: (e.content && e.content.$t) || '',
+            published: e.published.$t, updatedAt: Date.now()
+          });
+          if (++ops >= 400) await flush();
+        }
+        await flush();
+        log('   tersimpan.');
+      }
+      log(dry ? 'Cek selesai (tidak ada yang ditulis).' : 'Selesai.');
+    } catch (e) {
+      log('ERROR: ' + e.message);
+    } finally { $('mRun').disabled = false; }
+  };
+})();
+</script>
+</body>
+</html>
