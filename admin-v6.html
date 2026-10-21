@@ -25,11 +25,15 @@
   #msg.ok  { display:block; color:var(--ok);  border:1px solid var(--ok);  background:var(--bg); }
   .user { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--line); }
   .user button { margin:0; }
+  #sugg { position:absolute; left:0; right:0; top:100%; z-index:20; background:var(--bg); border:1px solid var(--line); border-radius:8px; margin-top:2px; max-height:260px; overflow:auto; box-shadow:0 6px 18px rgba(0,0,0,.18); }
+  #sugg .sg { padding:10px 12px; border-bottom:1px solid var(--line); word-break:break-all; cursor:pointer; }
+  #sugg .sg:last-child { border-bottom:0; }
+  #sugg .sg:active { background:var(--line); }
   [hidden] { display:none !important; }
 </style>
 </head>
 <body>
-<h1>EdelTL Admin <small style="font-size:12px;color:var(--mut)">v6 · daftar pembaca</small></h1>
+<h1>EdelTL Admin <small style="font-size:12px;color:var(--mut)">v6 · daftar pembaca · saran slug</small></h1>
 <div id="msg" role="status"></div>
 
 <section id="loginBox">
@@ -45,7 +49,7 @@
   <section>
     <h2>Tambah / ubah bab</h2>
     <div class="row">
-      <div><label for="slug">Slug novel</label><input id="slug" placeholder="contoh: my-novel"></div>
+      <div style="position:relative"><label for="slug">Slug novel</label><input id="slug" placeholder="ketik sebagian kata, mis: kembali" autocomplete="off" autocapitalize="off" spellcheck="false"><div id="sugg" hidden></div></div>
       <div><label for="num">Nomor bab</label><input id="num" type="number" min="1" step="1"></div>
     </div>
     <label for="title">Judul bab</label><input id="title">
@@ -124,6 +128,7 @@ auth.onAuthStateChanged(async (user) => {
   } catch (e) { say('Gagal cek admin (' + (e.code || '?') + '): ' + e.message, 'err'); await auth.signOut(); return; }
   $('who').textContent = user.email;
   $('app').hidden = false;
+  loadSlugs();
   loadPending();
   loadApproved();
 });
@@ -134,6 +139,55 @@ $('loginBtn').onclick = () => {
     .catch((e) => say('Gagal masuk: ' + (e.code || '') + ' ' + e.message, 'err'));
 };
 $('logoutBtn').onclick = () => auth.signOut();
+
+// ---------- Saran slug + nomor bab otomatis ----------
+let slugList = [];
+async function loadSlugs() {
+  try {
+    const qs = await db.collection('novelMeta').get();
+    slugList = qs.docs.map((d) => d.id).sort();
+  } catch (e) { /* saran opsional; kalau gagal, ketik manual tetap bisa */ }
+}
+function renderSugg() {
+  const box = $('sugg');
+  const q = $('slug').value.trim().toLowerCase();
+  box.textContent = '';
+  if (!q) { box.hidden = true; return; }
+  const list = slugList.filter((x) => x.toLowerCase().includes(q) && x.toLowerCase() !== q).slice(0, 8);
+  if (!list.length) { box.hidden = true; return; }
+  list.forEach((x) => {
+    const row = document.createElement('div'); row.className = 'sg'; row.textContent = x;
+    row.addEventListener('pointerdown', (e) => { e.preventDefault(); pickSlug(x); });
+    box.append(row);
+  });
+  box.hidden = false;
+}
+function autoTitle() {
+  const t = $('title').value.trim(), n = parseInt($('num').value, 10);
+  if (n && (!t || /^Bab \d+$/.test(t))) $('title').value = 'Bab ' + n;
+}
+async function fillNext() {
+  const slug = cleanSlug($('slug').value);
+  if (!slug) return;
+  try {
+    const snap = await db.doc('novels/' + slug).get();
+    if (!snap.exists) return;
+    const last = ((snap.data().toc) || []).reduce((m, x) => Math.max(m, x.n || 0), 0);
+    $('num').value = last + 1;
+    autoTitle();
+    say(`Bab terakhir: ${last}. Nomor diisi ${last + 1}.`);
+  } catch (e) { /* abaikan */ }
+}
+function pickSlug(x) {
+  $('slug').value = x;
+  $('sugg').hidden = true;
+  fillNext();
+}
+$('slug').addEventListener('input', renderSugg);
+$('slug').addEventListener('focus', renderSugg);
+$('slug').addEventListener('blur', () => setTimeout(() => { $('sugg').hidden = true; }, 150));
+$('slug').addEventListener('change', () => { if (slugList.includes(cleanSlug($('slug').value))) fillNext(); });
+$('num').addEventListener('input', autoTitle);
 
 $('loadCh').onclick = async () => {
   const slug = cleanSlug($('slug').value), n = parseInt($('num').value, 10);
@@ -164,7 +218,8 @@ $('saveCh').onclick = async () => {
       tx.set(db.doc('novelMeta/' + slug), { count: next.length, lastUpdated: new Date(last).toISOString() });
     });
     say(`Bab ${n} tersimpan.`);
-    $('num').value = n + 1; $('title').value = ''; $('body').value = '';
+    if (!slugList.includes(slug)) { slugList.push(slug); slugList.sort(); }
+    $('num').value = n + 1; $('title').value = ''; $('body').value = ''; autoTitle();
   } catch (e) { say(e.message, 'err'); }
 };
 
