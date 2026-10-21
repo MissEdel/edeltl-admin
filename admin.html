@@ -212,13 +212,26 @@ $('refreshPending').onclick = loadPending;
   const terms = (e) => (e.category || []).map((c) => c.term);
   const slugOf = (e) => { const t = terms(e).find((x) => x.startsWith('novel:')); return t ? t.slice(6) : null; };
 
+  // JSONP (alt=json-in-script): dimuat lewat <script>, jadi tidak kena batasan CORS.
+  let jsonpN = 0;
+  function jsonp(url) {
+    return new Promise((resolve, reject) => {
+      const cb = '__edeltlJsonp' + (++jsonpN) + '_' + Date.now();
+      const sc = document.createElement('script');
+      const done = () => { delete window[cb]; sc.remove(); clearTimeout(timer); };
+      const timer = setTimeout(() => { done(); reject(new Error('Timeout: ' + url)); }, 30000);
+      window[cb] = (data) => { done(); resolve(data); };
+      sc.onerror = () => { done(); reject(new Error('Gagal memuat feed (diblokir atau tidak ada): ' + url)); };
+      sc.src = url + '&callback=' + cb;
+      document.head.appendChild(sc);
+    });
+  }
+
   async function feed(site, label, extra) {
     const out = [];
     for (let start = 1; ; start += 150) {
-      const url = `${site}/feeds/posts/default/-/${encodeURIComponent(label)}?alt=json&max-results=150&start-index=${start}${extra || ''}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(res.status + ' ' + url);
-      const data = await res.json();
+      const url = `${site}/feeds/posts/default/-/${encodeURIComponent(label)}?alt=json-in-script&max-results=150&start-index=${start}${extra || ''}`;
+      const data = await jsonp(url);
       const entries = (data.feed && data.feed.entry) || [];
       out.push(...entries);
       if (entries.length < 150) break;
@@ -269,4 +282,5 @@ $('refreshPending').onclick = loadPending;
 })();
 </script>
 </body>
-</html>
+  </html>
+  
