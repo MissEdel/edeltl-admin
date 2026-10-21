@@ -210,6 +210,18 @@ $('refreshPending').onclick = loadPending;
 (function () {
   const log = (t) => { const l = $('mLog'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; };
   const terms = (e) => (e.category || []).map((c) => c.term);
+  // Urutan bab sama seperti tema: nomor di judul dulu ("Prolog" = paling awal),
+  // tanggal terbit hanya kalau salah satu judul tidak punya angka.
+  const ord = (title) => {
+    if (/prolog/i.test(title)) return -1;
+    const m = title.match(/(\d+(?:\.\d+)?)/);
+    return m ? parseFloat(m[1]) : Infinity;
+  };
+  const byTitleThenDate = (a, b) => {
+    const oa = ord(a.title.$t), ob = ord(b.title.$t);
+    if (isFinite(oa) && isFinite(ob) && oa !== ob) return oa - ob;
+    return new Date(a.published.$t) - new Date(b.published.$t);
+  };
   const slugOf = (e) => { const t = terms(e).find((x) => x.startsWith('novel:')); return t ? t.slice(6) : null; };
 
   // JSONP (alt=json-in-script): dimuat lewat <script>, jadi tidak kena batasan CORS.
@@ -250,13 +262,12 @@ $('refreshPending').onclick = loadPending;
         const slug = slugOf(info);
         if (!slug) { log('Lewati (tanpa label novel:): ' + info.title.$t); continue; }
         const all = await feed(site, 'novel:' + slug, '&orderby=published');
-        const chapters = all.filter((e) => !terms(e).includes('novel-info'))
-          .sort((a, b) => new Date(a.published.$t) - new Date(b.published.$t));
+        const chapters = all.filter((e) => !terms(e).includes('novel-info')).sort(byTitleThenDate);
         const bodyText = ((info.content && info.content.$t) || '').replace(/<[^>]+>/g, ' ');
         const locked = /kode\s*unlock\s*:/i.test(bodyText);
         const toc = chapters.map((e, i) => ({ id: pad(i + 1), n: i + 1, title: e.title.$t, t: new Date(e.published.$t).getTime() }));
         log(`${slug}: ${chapters.length} bab, locked=${locked}`);
-        if (dry) { toc.slice(0, 3).forEach((x) => log('   ' + x.id + ' ' + x.title)); continue; }
+        if (dry) { toc.slice(0, 3).forEach((x) => log('   ' + x.id + ' ' + x.title)); if (toc.length > 3) log('   ... ' + toc[toc.length - 1].id + ' ' + toc[toc.length - 1].title); continue; }
 
         const lastT = toc.reduce((m, x) => Math.max(m, x.t || 0), 0);
         let batch = db.batch(), ops = 0;
