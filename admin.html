@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>EdelTL Admin</title>
+<title>EdelTL Admin v7</title>
 <style>
-  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --line:#d9d9e0; --acc:#5b4bdb; --err:#c62828; --ok:#2e7d32; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#141418; --fg:#ececf1; --mut:#9a9aa6; --line:#2c2c35; --acc:#8b7dff; --err:#ef7b7b; --ok:#6fcf7a; } }
-  * { box-sizing: border-box; }
+  :root { --bg:#fff; --fg:#1b1b1f; --mut:#6b6b76; --line:#d9d9e0; --acc:#1a1a1a; --acc-fg:#fff; --err:#c62828; --ok:#2e7d32; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141418; --fg:#ececf1; --mut:#9a9aa6; --line:#2c2c35; --acc:#f2f2f2; --acc-fg:#1a1a1a; --err:#ef7b7b; --ok:#6fcf7a; } }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  input, textarea, button { outline: none; -webkit-appearance: none; appearance: none; }
+  input:focus, textarea:focus { border-color: var(--fg); }
+  input[type=checkbox] { -webkit-appearance: auto; appearance: auto; accent-color: var(--fg); }
   body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui,sans-serif; max-width:760px; margin-inline:auto; }
   h1 { font-size:20px; margin:0 0 12px; }
   h2 { font-size:16px; margin:0 0 10px; }
@@ -18,13 +21,21 @@
   textarea { min-height:220px; resize:vertical; }
   input[type=checkbox] { width:auto; }
   .row { display:flex; gap:10px; } .row > * { flex:1; }
-  button { cursor:pointer; background:var(--acc); color:#fff; border-color:var(--acc); width:auto; margin-top:10px; }
+  button { cursor:pointer; background:var(--acc); color:var(--acc-fg); border-color:var(--acc); width:auto; margin-top:10px; touch-action:manipulation; user-select:none; -webkit-user-select:none; transition:transform .12s ease, opacity .12s ease, background-color .12s ease; }
+  button:active { transform:scale(.95); opacity:.75; }
   button.ghost { background:transparent; color:var(--fg); border-color:var(--line); }
+  button.ghost:active { background:var(--line); opacity:1; }
+  @media (hover:hover) { button:hover { opacity:.88; } button.ghost:hover { background:var(--line); opacity:1; } }
   #msg { position:sticky; top:0; padding:8px 12px; border-radius:8px; margin-bottom:12px; display:none; }
   #msg.err { display:block; color:var(--err); border:1px solid var(--err); background:var(--bg); }
   #msg.ok  { display:block; color:var(--ok);  border:1px solid var(--ok);  background:var(--bg); }
   .user { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-top:1px solid var(--line); }
   .user button { margin:0; }
+  #sugg { position:absolute; left:0; right:0; top:100%; z-index:20; background:var(--bg); border:1px solid var(--line); border-radius:8px; margin-top:2px; max-height:260px; overflow:auto; box-shadow:0 6px 18px rgba(0,0,0,.18); }
+  #sugg .sg { padding:10px 12px; border-bottom:1px solid var(--line); word-break:break-all; cursor:pointer; }
+  #sugg .sg:last-child { border-bottom:0; }
+  #sugg .sg:active { background:var(--line); }
+  #sugg .sg { -webkit-tap-highlight-color: transparent; }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -45,7 +56,7 @@
   <section>
     <h2>Tambah / ubah bab</h2>
     <div class="row">
-      <div><label for="slug">Slug novel</label><input id="slug" placeholder="contoh: my-novel"></div>
+      <div style="position:relative"><label for="slug">Slug novel</label><input id="slug" placeholder="ketik sebagian kata, mis: kembali" autocomplete="off" autocapitalize="off" spellcheck="false"><div id="sugg" hidden></div></div>
       <div><label for="num">Nomor bab</label><input id="num" type="number" min="1" step="1"></div>
     </div>
     <label for="title">Judul bab</label><input id="title">
@@ -56,21 +67,19 @@
   </section>
 
   <section>
-    <h2>Novel &amp; kode unlock</h2>
-    <label for="slug2">Slug novel</label><input id="slug2" placeholder="my-novel">
-    <label><input type="checkbox" id="locked"> Novel terkunci (butuh kode)</label>
-    <label for="code">Kode unlock baru (opsional, pakai 16+ karakter acak)</label>
-    <div class="row"><input id="code" autocomplete="off"><button class="ghost" id="genCode" style="margin-top:0">Acak</button></div>
-    <button id="saveNovel">Simpan novel</button>
-  </section>
-
-  <section>
     <h2>Migrasi bab dari Blogger</h2>
     <p style="font-size:13px;color:var(--mut);margin:0 0 6px">Menyalin novel &amp; bab dari feed Blogger ke Firestore. Aman diulang (bab ditimpa dengan ID yang sama). Mulai dengan "cek saja" dulu.</p>
     <label for="mSite">Alamat blog</label><input id="mSite" value="https://edeltl.blogspot.com">
     <label><input type="checkbox" id="mDry" checked> Cek saja (tidak menulis apa-apa)</label>
     <button id="mRun">Mulai</button>
     <pre id="mLog" style="white-space:pre-wrap;font-size:12px;margin:10px 0 0;max-height:260px;overflow:auto"></pre>
+  </section>
+
+  <section>
+    <h2>Pembaca disetujui</h2>
+    <input id="uSearch" placeholder="Cari email..." autocomplete="off">
+    <div id="approved" style="margin-top:8px">—</div>
+    <button class="ghost" id="refreshApproved">Muat ulang</button>
   </section>
 
   <section>
@@ -126,7 +135,9 @@ auth.onAuthStateChanged(async (user) => {
   } catch (e) { say('Gagal cek admin (' + (e.code || '?') + '): ' + e.message, 'err'); await auth.signOut(); return; }
   $('who').textContent = user.email;
   $('app').hidden = false;
+  loadSlugs();
   loadPending();
+  loadApproved();
 });
 
 $('loginBtn').onclick = () => {
@@ -135,6 +146,55 @@ $('loginBtn').onclick = () => {
     .catch((e) => say('Gagal masuk: ' + (e.code || '') + ' ' + e.message, 'err'));
 };
 $('logoutBtn').onclick = () => auth.signOut();
+
+// ---------- Saran slug + nomor bab otomatis ----------
+let slugList = [];
+async function loadSlugs() {
+  try {
+    const qs = await db.collection('novelMeta').get();
+    slugList = qs.docs.map((d) => d.id).sort();
+  } catch (e) { /* saran opsional; kalau gagal, ketik manual tetap bisa */ }
+}
+function renderSugg() {
+  const box = $('sugg');
+  const q = $('slug').value.trim().toLowerCase();
+  box.textContent = '';
+  if (!q) { box.hidden = true; return; }
+  const list = slugList.filter((x) => x.toLowerCase().includes(q) && x.toLowerCase() !== q).slice(0, 8);
+  if (!list.length) { box.hidden = true; return; }
+  list.forEach((x) => {
+    const row = document.createElement('div'); row.className = 'sg'; row.textContent = x;
+    row.addEventListener('pointerdown', (e) => { e.preventDefault(); pickSlug(x); });
+    box.append(row);
+  });
+  box.hidden = false;
+}
+function autoTitle() {
+  const t = $('title').value.trim(), n = parseInt($('num').value, 10);
+  if (n && (!t || /^Bab \d+$/.test(t))) $('title').value = 'Bab ' + n;
+}
+async function fillNext() {
+  const slug = cleanSlug($('slug').value);
+  if (!slug) return;
+  try {
+    const snap = await db.doc('novels/' + slug).get();
+    if (!snap.exists) return;
+    const last = ((snap.data().toc) || []).reduce((m, x) => Math.max(m, x.n || 0), 0);
+    $('num').value = last + 1;
+    autoTitle();
+    say(`Bab terakhir: ${last}. Nomor diisi ${last + 1}.`);
+  } catch (e) { /* abaikan */ }
+}
+function pickSlug(x) {
+  $('slug').value = x;
+  $('sugg').hidden = true;
+  fillNext();
+}
+$('slug').addEventListener('input', renderSugg);
+$('slug').addEventListener('focus', renderSugg);
+$('slug').addEventListener('blur', () => setTimeout(() => { $('sugg').hidden = true; }, 150));
+$('slug').addEventListener('change', () => { if (slugList.includes(cleanSlug($('slug').value))) fillNext(); });
+$('num').addEventListener('input', autoTitle);
 
 $('loadCh').onclick = async () => {
   const slug = cleanSlug($('slug').value), n = parseInt($('num').value, 10);
@@ -165,24 +225,8 @@ $('saveCh').onclick = async () => {
       tx.set(db.doc('novelMeta/' + slug), { count: next.length, lastUpdated: new Date(last).toISOString() });
     });
     say(`Bab ${n} tersimpan.`);
-    $('num').value = n + 1; $('title').value = ''; $('body').value = '';
-  } catch (e) { say(e.message, 'err'); }
-};
-
-$('genCode').onclick = () => {
-  const a = new Uint8Array(18); crypto.getRandomValues(a);
-  $('code').value = Array.from(a, (b) => 'abcdefghjkmnpqrstuvwxyz23456789'[b % 31]).join('');
-};
-
-$('saveNovel').onclick = async () => {
-  const slug = cleanSlug($('slug2').value), code = $('code').value.trim();
-  if (!slug) return say('Isi slug novel.', 'err');
-  if (code && /[\/\s]/.test(code)) return say('Kode tidak boleh berisi spasi atau "/".', 'err');
-  try {
-    await db.doc('novels/' + slug).set({ locked: $('locked').checked, updatedAt: Date.now() }, { merge: true });
-    if (code) await db.doc('unlockCodes/' + code).set({ slug });
-    say(code ? 'Tersimpan. Kode baru aktif — simpan di tempat aman, jangan ditaruh di Blogger.' : 'Tersimpan.');
-    $('code').value = '';
+    if (!slugList.includes(slug)) { slugList.push(slug); slugList.sort(); }
+    $('num').value = n + 1; $('title').value = ''; $('body').value = ''; autoTitle();
   } catch (e) { say(e.message, 'err'); }
 };
 
@@ -197,7 +241,7 @@ async function loadPending() {
       const span = document.createElement('span'); span.textContent = d.data().email || d.id;
       const btn = document.createElement('button'); btn.textContent = 'Setujui';
       btn.onclick = async () => {
-        try { await d.ref.update({ approved: true }); row.remove(); say('Disetujui.'); }
+        try { await d.ref.update({ approved: true }); row.remove(); say('Disetujui.'); loadApproved(); }
         catch (e) { say(e.message, 'err'); }
       };
       row.append(span, btn); box.append(row);
@@ -205,6 +249,46 @@ async function loadPending() {
   } catch (e) { say(e.message, 'err'); }
 }
 $('refreshPending').onclick = loadPending;
+
+// ---------- Pembaca yang sudah disetujui ----------
+let approvedList = [];
+async function loadApproved() {
+  try {
+    const qs = await db.collection('users').where('approved', '==', true).limit(500).get();
+    approvedList = qs.docs.map((d) => ({ ref: d.ref, email: d.data().email || d.id }));
+    approvedList.sort((a, b) => a.email.localeCompare(b.email));
+    renderApproved();
+  } catch (e) { say('Gagal memuat daftar pembaca: ' + e.message, 'err'); }
+}
+function renderApproved() {
+  const box = $('approved');
+  const q = $('uSearch').value.trim().toLowerCase();
+  const list = approvedList.filter((u) => u.email.toLowerCase().includes(q));
+  box.textContent = '';
+  if (!list.length) { box.textContent = approvedList.length ? 'Tidak ada yang cocok.' : 'Belum ada.'; return; }
+  const head = document.createElement('div');
+  head.style.cssText = 'font-size:13px;color:var(--mut);margin-bottom:4px';
+  head.textContent = list.length + (q ? ' dari ' + approvedList.length : '') + ' akun';
+  box.append(head);
+  list.forEach((u) => {
+    const row = document.createElement('div'); row.className = 'user';
+    const span = document.createElement('span'); span.textContent = u.email; span.style.wordBreak = 'break-all';
+    const btn = document.createElement('button'); btn.className = 'ghost'; btn.textContent = 'Cabut';
+    btn.onclick = async () => {
+      if (!confirm('Cabut akses untuk ' + u.email + '?\nAkun ini kembali ke status menunggu persetujuan.')) return;
+      try {
+        await u.ref.update({ approved: false });
+        approvedList = approvedList.filter((x) => x !== u);
+        renderApproved();
+        say('Akses dicabut: ' + u.email);
+        loadPending();
+      } catch (e) { say(e.message, 'err'); }
+    };
+    row.append(span, btn); box.append(row);
+  });
+}
+$('uSearch').oninput = renderApproved;
+$('refreshApproved').onclick = loadApproved;
 
 // ---------- Migrasi dari Blogger ----------
 (function () {
@@ -264,7 +348,7 @@ $('refreshPending').onclick = loadPending;
         const all = await feed(site, 'novel:' + slug, '&orderby=published');
         const chapters = all.filter((e) => !terms(e).includes('novel-info')).sort(byTitleThenDate);
         const bodyText = ((info.content && info.content.$t) || '').replace(/<[^>]+>/g, ' ');
-        const locked = /kode\s*unlock\s*:/i.test(bodyText);
+        const locked = false;
         const toc = chapters.map((e, i) => ({ id: pad(i + 1), n: i + 1, title: e.title.$t, t: new Date(e.published.$t).getTime() }));
         log(`${slug}: ${chapters.length} bab, locked=${locked}`);
         if (dry) { toc.slice(0, 3).forEach((x) => log('   ' + x.id + ' ' + x.title)); if (toc.length > 3) log('   ... ' + toc[toc.length - 1].id + ' ' + toc[toc.length - 1].title); continue; }
@@ -294,4 +378,3 @@ $('refreshPending').onclick = loadPending;
 </script>
 </body>
   </html>
-  
